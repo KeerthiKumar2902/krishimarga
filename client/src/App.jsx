@@ -1,15 +1,24 @@
-import { useState } from 'react'
-
-import './App.css'
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Navbar from './components/Navbar';
+import Home from './modules/market/pages/Home';
+import CommodityDetails from './modules/market/pages/CommodityDetails';
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <h1 className="text-4xl font-bold text-center text-blue-600 my-4">Keerthi Kumar S</h1>
-    </>
-  )
+    <Router>
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <Navbar />
+        <Routes>
+          {/* Page 1: The Catalog */}
+          <Route path="/" element={<Home />} />
+          
+          {/* Page 2: The Details (Dynamic URL) */}
+          <Route path="/market/:commodityName" element={<CommodityDetails />} />
+        </Routes>
+      </div>
+    </Router>
+  );
 }
 
-export default App
+export default App;
