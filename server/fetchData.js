@@ -5,23 +5,35 @@ const Price = require('./models/Price');
 
 // --- CONFIGURATION ---
 const RESOURCE_ID = '35985678-0d79-46b4-9ed6-6f13308a1d24';
-const API_KEY = process.env.DATA_GOV_API_KEY; 
+const API_KEY = process.env.DATA_GOV_API_KEY;
 
-const TARGETS = [
-    { state: 'Karnataka', district: 'Shimoga', commodity: 'Arecanut(Betelnut/Supari)' },
-    { state: 'Karnataka', district: 'Bangalore', commodity: 'Tomato' } 
+// TARGET: All South Indian States
+const TARGET_STATES = [
+    'Karnataka',
+    'Tamil Nadu',
+    'Kerala',
+    'Andhra Pradesh',
+    'Telangana'
 ];
+
+// Set the date you want to fetch.
+// In production, use "Yesterday" to ensure the market day is closed and full data is available.
+const YESTERDAY = new Date();
+YESTERDAY.setDate(YESTERDAY.getDate() - 1);
+
+// Format Date to YYYY-MM-DD for the API Query
+const DATE_TO_FETCH = YESTERDAY.toISOString().split('T')[0];
+// OR: Manually override for testing:
+// const DATE_TO_FETCH = '2025-10-17'; 
 // ---------------------
 
 /**
- * Helper function to convert "DD/MM/YYYY" string to a JavaScript Date object
- * Input: "17/10/2025" -> Output: Date Object (2025-10-17)
+ * Helper: Convert "DD/MM/YYYY" string -> Date Object
  */
 function parseIndianDate(dateStr) {
     if (!dateStr) return new Date();
-    const parts = dateStr.split('/'); // Split ["17", "10", "2025"]
-    // Note: Month is 0-indexed in JS (0 = Jan, 9 = Oct)
-    return new Date(parts[2], parts[1] - 1, parts[0]); 
+    const parts = dateStr.split('/');
+    return new Date(parts[2], parts[1] - 1, parts[0]);
 }
 
 async function fetchData() {
@@ -29,63 +41,89 @@ async function fetchData() {
         console.log("🔌 Connecting to MongoDB...");
         await mongoose.connect(process.env.MONGO_URI);
         console.log("✅ Connected.");
+        console.log(`📅 Target Date: ${DATE_TO_FETCH}`);
 
-        for (const target of TARGETS) {
-            console.log(`\n🔍 Fetching ${target.commodity} in ${target.district}...`);
+        for (const state of TARGET_STATES) {
+            console.log(`\n-----------------------------------------`);
+            console.log(`🌍 Starting fetch for state: ${state}`);
             
-            // Hardcoded date for testing based on your screenshot
-            const dateStr = '2025-10-17'; 
+            let offset = 0;
+            let limit = 1000; // API usually caps around here
+            let hasMoreData = true;
+            let totalStateRecords = 0;
 
-            const url = `https://api.data.gov.in/resource/${RESOURCE_ID}?api-key=${API_KEY}&format=json&filters[State]=${target.state}&filters[District]=${target.district}&filters[Commodity]=${encodeURIComponent(target.commodity)}&filters[Arrival_Date]=${dateStr}`;
+            // PAGINATION LOOP: Keep fetching until no more records come back
+            while (hasMoreData) {
+                // Build URL with State filter and Pagination (offset/limit)
+                const url = `https://api.data.gov.in/resource/${RESOURCE_ID}?api-key=${API_KEY}&format=json&filters[State]=${encodeURIComponent(state)}&filters[Arrival_Date]=${DATE_TO_FETCH}&limit=${limit}&offset=${offset}`;
 
-            const response = await axios.get(url);
-            const records = response.data.records;
+                try {
+                    const response = await axios.get(url);
+                    const records = response.data.records;
 
-            if (!records || records.length === 0) {
-                console.log("⚠️ No records found for this target.");
-                continue;
-            }
-
-            console.log(`📦 Found ${records.length} records. Saving to Database...`);
-
-            const ops = records.map(record => {
-                // FIX: Convert the string date to a real Date object
-                const realDate = parseIndianDate(record.Arrival_Date);
-
-                return {
-                    updateOne: {
-                        filter: { 
-                            market: record.Market, 
-                            commodity: record.Commodity, 
-                            variety: record.Variety, 
-                            arrival_date: realDate // FIX 1: Use Real Date in Filter
-                        },
-                        update: {
-                            $set: {
-                                state: record.State,
-                                district: record.District,
-                                market: record.Market,
-                                commodity: record.Commodity,
-                                variety: record.Variety,
-                                min_price: parseFloat(record.Min_Price),
-                                max_price: parseFloat(record.Max_Price),
-                                modal_price: parseFloat(record.Modal_Price),
-                                arrival_date: realDate, // FIX 2: Use Real Date in Save
-                                fetched_at: new Date()
-                            }
-                        },
-                        upsert: true
+                    if (!records || records.length === 0) {
+                        hasMoreData = false; // Stop loop
+                        if (offset === 0) console.log(`⚠️ No records found for ${state}.`);
+                        break;
                     }
-                };
-            });
 
-            await Price.bulkWrite(ops);
-            console.log("✅ Data Saved/Updated successfully!");
+                    console.log(`   ⬇️  Fetched batch of ${records.length} records (Offset: ${offset})...`);
+                    
+                    // Process and Save this batch
+                    const ops = records.map(record => {
+                        const realDate = parseIndianDate(record.Arrival_Date);
+                        return {
+                            updateOne: {
+                                filter: { 
+                                    market: record.Market, 
+                                    commodity: record.Commodity, 
+                                    variety: record.Variety, 
+                                    arrival_date: realDate 
+                                },
+                                update: {
+                                    $set: {
+                                        state: record.State,
+                                        district: record.District,
+                                        market: record.Market,
+                                        commodity: record.Commodity,
+                                        variety: record.Variety,
+                                        min_price: parseFloat(record.Min_Price),
+                                        max_price: parseFloat(record.Max_Price),
+                                        modal_price: parseFloat(record.Modal_Price),
+                                        arrival_date: realDate,
+                                        fetched_at: new Date()
+                                    }
+                                },
+                                upsert: true
+                            }
+                        };
+                    });
+
+                    await Price.bulkWrite(ops);
+                    
+                    totalStateRecords += records.length;
+                    
+                    // If we got fewer records than the limit, we've reached the end
+                    if (records.length < limit) {
+                        hasMoreData = false;
+                    } else {
+                        // Prepare for next page
+                        offset += limit;
+                    }
+
+                } catch (apiError) {
+                    console.error(`❌ API Error for ${state}:`, apiError.message);
+                    hasMoreData = false; // Stop this state on error
+                }
+            }
+            
+            if (totalStateRecords > 0) {
+                console.log(`✅ Completed ${state}: Saved ${totalStateRecords} total records.`);
+            }
         }
 
     } catch (error) {
-        console.error("❌ Error:", error.message);
-        if (error.response) console.error("API Response:", error.response.data);
+        console.error("❌ Database/Script Error:", error.message);
     } finally {
         console.log("\n👋 Closing Database Connection.");
         mongoose.disconnect();
