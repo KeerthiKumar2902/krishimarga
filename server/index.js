@@ -3,28 +3,25 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 
-// Initialize the Express App
+// Import Routes
+const priceRoutes = require('./routes/prices'); // <--- ADD THIS
+
 const app = express();
 
-// Middleware
-app.use(express.json()); // Allows us to parse JSON bodies from requests
-app.use(cors()); // Allows our Frontend (React) to talk to this Backend
+app.use(express.json());
+app.use(cors());
 
-// Database Connection
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => {
-        console.log("✅ MongoDB Connected Successfully!");
-    })
-    .catch((err) => {
-        console.error("❌ MongoDB Connection Error:", err);
-    });
+    .then(() => console.log("✅ MongoDB Connected Successfully!"))
+    .catch((err) => console.error("❌ MongoDB Connection Error:", err));
 
-// Basic Route to Test Server
+// Routes
+app.use('/api/prices', priceRoutes); // <--- ADD THIS
+
 app.get('/', (req, res) => {
     res.send('KrishiMarga API is running...');
 });
 
-// Start the Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
