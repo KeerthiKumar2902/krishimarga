@@ -1,4 +1,3 @@
-// client/src/modules/market/pages/Home.jsx
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +11,6 @@ const Home = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Fetch the Master List we just seeded
     const fetchList = async () => {
       try {
         const res = await axios.get(`${API_URL}/commodities`);
@@ -26,10 +24,16 @@ const Home = () => {
     fetchList();
   }, []);
 
-  // Filter list based on search box
   const filteredList = commodities.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // FIX: Helper to safely navigate to commodity page
+  const handleCardClick = (name) => {
+    // Encodes slashes '/' to '%2F' so URL doesn't break
+    const safeName = encodeURIComponent(name);
+    navigate(`/market/${safeName}`);
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -56,10 +60,9 @@ const Home = () => {
           {filteredList.map((crop) => (
             <div 
               key={crop._id}
-              onClick={() => navigate(`/market/${crop.name}`)}
+              onClick={() => handleCardClick(crop.name)} // Use the safe handler
               className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md hover:border-brand-300 transition-all cursor-pointer flex flex-col items-center text-center group"
             >
-              {/* Fallback Icon if no image */}
               <div className="w-16 h-16 bg-brand-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-brand-100 transition-colors text-2xl">
                 🌱
               </div>

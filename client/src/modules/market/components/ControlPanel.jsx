@@ -61,7 +61,8 @@ const ControlPanel = ({ commodity, onFilterChange }) => {
   }, [selectedState, selectedDistrict, selectedMarket, selectedVariety, selectedDate]);
 
   return (
-    <div className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm transition-all">
+    // CHANGE: Removed 'sticky top-0 z-20' so it scrolls normally
+    <div className="bg-white border-b border-gray-200 shadow-sm transition-all">
       <div className="container mx-auto px-4 py-3">
         
         <div className="flex flex-col gap-3">

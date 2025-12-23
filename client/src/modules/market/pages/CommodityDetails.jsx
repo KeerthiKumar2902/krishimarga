@@ -6,22 +6,24 @@ import { marketService } from '../../../services/api';
 import ControlPanel from '../components/ControlPanel';
 import MarketStats from '../components/MarketStats';
 import MarketGraph from '../components/MarketGraph';
+import MarketTable from '../components/MarketTable';
 
 const CommodityDetails = () => {
-  const { commodityName } = useParams();
+  const params = useParams(); 
+  // FIX: Explicitly decode the URL parameter to handle slashes correctly
+  const commodityName = decodeURIComponent(params.commodityName);
   
   const [filters, setFilters] = useState({
     state: '',
     district: '',
     market: '',
     variety: '',
-    date: '' // New Filter
+    date: '' 
   });
 
   const [todayPrice, setTodayPrice] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Fetch Latest Price when filters change
   useEffect(() => {
     if (!filters.district) {
         setTodayPrice(null);
@@ -31,28 +33,21 @@ const CommodityDetails = () => {
     const fetchLatest = async () => {
         setLoading(true);
         try {
-            // Logic:
-            // 1. If Date is selected, filter by that EXACT date.
-            // 2. If NO date, filter by "Latest" (limit: 1, sort desc).
-            
             let queryParams = {
                 ...filters,
                 commodity: commodityName,
                 limit: 1
             };
 
-            // If user picked a specific date, fetch THAT day (range start/end same day)
             if (filters.date) {
                 queryParams.from = filters.date;
                 queryParams.to = filters.date;
-                // Remove limit to ensure we find it if it exists
                 delete queryParams.limit; 
             }
 
             const res = await marketService.getPrices(queryParams);
             
             if (res.data && res.data.length > 0) {
-                // If date filter was used, we might get multiple (diff markets), pick first
                 setTodayPrice(res.data[0]);
             } else {
                 setTodayPrice(null);
@@ -83,10 +78,8 @@ const CommodityDetails = () => {
             </div>
         </div>
 
-        {/* Control Panel (Now passes commodity prop) */}
         <ControlPanel commodity={commodityName} onFilterChange={setFilters} />
 
-        {/* Main Content */}
         <div className="container mx-auto px-4 py-8 max-w-5xl">
             
             {!filters.district && (
@@ -100,17 +93,16 @@ const CommodityDetails = () => {
             )}
 
             {filters.district && (
-                <div className="animate-fade-in">
+                <div className="animate-fade-in space-y-6">
                     
-                    {/* Stats Card */}
                     {loading ? (
-                        <div className="h-40 bg-gray-200 rounded-xl animate-pulse mb-6"></div>
+                        <div className="h-40 bg-gray-200 rounded-xl animate-pulse"></div>
                     ) : (
                         <MarketStats priceData={todayPrice} filters={filters} />
                     )}
 
-                    {/* Graph (History) */}
-                    {/* We pass 'todayPrice' so graph knows what variety to default to if needed */}
+                    <MarketTable filters={filters} commodity={commodityName} />
+
                     <MarketGraph filters={filters} commodity={commodityName} />
 
                 </div>

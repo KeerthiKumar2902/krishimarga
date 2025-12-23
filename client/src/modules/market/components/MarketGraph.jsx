@@ -3,10 +3,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { marketService } from '../../../services/api';
 
 const TIME_RANGES = [
-  { label: '1M', value: '1m' }, // Uses Local DB
-  { label: '3M', value: '3m' }, // Uses Proxy
-  { label: '6M', value: '6m' }, // Uses Proxy
-  { label: '1Y', value: '1y' }, // Uses Proxy
+  { label: '1M', value: '1m' },
+  { label: '3M', value: '3m' },
+  { label: '6M', value: '6m' },
+  { label: '1Y', value: '1y' },
 ];
 
 const MarketGraph = ({ filters, commodity }) => {
@@ -15,16 +15,15 @@ const MarketGraph = ({ filters, commodity }) => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Don't load graph if no district selected
     if (!filters.state || !filters.district) return;
 
     const loadData = async () => {
       setLoading(true);
       try {
-        let resultData = [];
+        let rawData = [];
 
         if (range === '1m') {
-            // STRATEGY: Use LOCAL DB for speed (last 30 days)
+            // Local DB
             const res = await marketService.getPrices({
                 state: filters.state,
                 district: filters.district,
@@ -32,9 +31,9 @@ const MarketGraph = ({ filters, commodity }) => {
                 commodity: commodity,
                 limit: 30
             });
-            resultData = res.data;
+            rawData = res.data;
         } else {
-            // STRATEGY: Use PROXY for deep history
+            // Proxy (History)
             const res = await marketService.getHistory({
                 state: filters.state,
                 district: filters.district,
@@ -42,14 +41,20 @@ const MarketGraph = ({ filters, commodity }) => {
                 commodity: commodity,
                 range: range
             });
-            resultData = res.data;
+            rawData = res.data;
         }
 
-        // Format for Chart (Reverse array to show Old -> New)
-        const formatted = resultData.slice().reverse().map(item => ({
-            date: new Date(item.arrival_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-            price: parseFloat(item.modal_price)
-        }));
+        // Normalize Data (Handle both Local DB and Gov API formats)
+        // Gov API uses Capitalized Keys (Modal_Price), Local DB uses lowercase (modal_price)
+        const formatted = rawData.slice().reverse().map(item => {
+            const price = item.modal_price || item.Modal_Price; // Handle both keys
+            const dateStr = item.arrival_date || item.Arrival_Date;
+            
+            return {
+                date: new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+                price: parseFloat(price)
+            };
+        }).filter(p => !isNaN(p.price)); // Remove bad data
         
         setData(formatted);
 
@@ -64,11 +69,10 @@ const MarketGraph = ({ filters, commodity }) => {
   }, [range, filters, commodity]);
 
   return (
-    <div className="bg-white rounded-xl shadow-md border border-gray-100 p-6">
-      <div className="flex flex-wrap justify-between items-center mb-6">
+    <div className="bg-white rounded-xl shadow-md border border-gray-100 p-6 mt-6 relative overflow-hidden">
+      <div className="flex flex-wrap justify-between items-center mb-6 relative z-10">
         <h3 className="text-lg font-bold text-gray-800">Price Trend Analysis</h3>
         
-        {/* Time Tabs */}
         <div className="flex bg-gray-100 p-1 rounded-lg">
             {TIME_RANGES.map(t => (
                 <button
@@ -86,9 +90,9 @@ const MarketGraph = ({ filters, commodity }) => {
         </div>
       </div>
 
-      <div className="h-80 w-full">
+      <div className="h-80 w-full relative z-10">
         {loading ? (
-            <div className="h-full flex items-center justify-center text-gray-400">Loading Chart...</div>
+            <div className="h-full flex items-center justify-center text-gray-400 animate-pulse">Loading Chart...</div>
         ) : data.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data}>
@@ -110,7 +114,7 @@ const MarketGraph = ({ filters, commodity }) => {
                 </LineChart>
             </ResponsiveContainer>
         ) : (
-            <div className="h-full flex items-center justify-center text-gray-400">
+            <div className="h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg">
                 No history data available for this range.
             </div>
         )}
