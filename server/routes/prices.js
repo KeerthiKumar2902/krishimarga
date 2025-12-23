@@ -1,3 +1,5 @@
+//server/routes/prices.js
+
 const express = require('express');
 const router = express.Router();
 const Price = require('../models/Price'); // Correctly import the Price model

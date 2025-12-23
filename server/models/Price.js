@@ -1,3 +1,5 @@
+//server/models/Price.js
+
 const mongoose = require('mongoose');
 
 const PriceSchema = new mongoose.Schema({

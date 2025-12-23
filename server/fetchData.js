@@ -1,75 +1,53 @@
+//server/fetchData.js
 require('dotenv').config();
 const mongoose = require('mongoose');
 const axios = require('axios');
 const Price = require('./models/Price');
 
-// --- CONFIGURATION ---
 const RESOURCE_ID = '35985678-0d79-46b4-9ed6-6f13308a1d24';
 const API_KEY = process.env.DATA_GOV_API_KEY;
 
-// TARGET: All South Indian States
-const TARGET_STATES = [
-    'Karnataka',
-    'Tamil Nadu',
-    'Kerala',
-    'Andhra Pradesh',
-    'Telangana'
-];
-
-// Set the date you want to fetch.
-// In production, use "Yesterday" to ensure the market day is closed and full data is available.
-const YESTERDAY = new Date();
-YESTERDAY.setDate(YESTERDAY.getDate() - 1);
-
-// Format Date to YYYY-MM-DD for the API Query
-const DATE_TO_FETCH = YESTERDAY.toISOString().split('T')[0];
-// OR: Manually override for testing:
-// const DATE_TO_FETCH = '2025-10-17'; 
-// ---------------------
-
-/**
- * Helper: Convert "DD/MM/YYYY" string -> Date Object
- */
 function parseIndianDate(dateStr) {
     if (!dateStr) return new Date();
     const parts = dateStr.split('/');
     return new Date(parts[2], parts[1] - 1, parts[0]);
 }
 
-async function fetchData() {
+async function runDailyFetch() {
+    console.log("⏰ Starting Smart Fetch (Yesterday + Today)...");
+
     try {
-        console.log("🔌 Connecting to MongoDB...");
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log("✅ Connected.");
-        console.log(`📅 Target Date: ${DATE_TO_FETCH}`);
+        if (mongoose.connection.readyState === 0) {
+            await mongoose.connect(process.env.MONGO_URI);
+        }
 
-        for (const state of TARGET_STATES) {
-            console.log(`\n-----------------------------------------`);
-            console.log(`🌍 Starting fetch for state: ${state}`);
-            
+        // 1. Define the "Rolling Window" (Yesterday and Today)
+        const today = new Date();
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        const targetDates = [yesterday, today];
+
+        for (const dateObj of targetDates) {
+            const dateStr = dateObj.toISOString().split('T')[0];
+            console.log(`\n🌍 Fetching All India data for: ${dateStr}`);
+
             let offset = 0;
-            let limit = 1000; // API usually caps around here
-            let hasMoreData = true;
-            let totalStateRecords = 0;
+            let limit = 2000;
+            let hasMore = true;
 
-            // PAGINATION LOOP: Keep fetching until no more records come back
-            while (hasMoreData) {
-                // Build URL with State filter and Pagination (offset/limit)
-                const url = `https://api.data.gov.in/resource/${RESOURCE_ID}?api-key=${API_KEY}&format=json&filters[State]=${encodeURIComponent(state)}&filters[Arrival_Date]=${DATE_TO_FETCH}&limit=${limit}&offset=${offset}`;
+            while (hasMore) {
+                const url = `https://api.data.gov.in/resource/${RESOURCE_ID}?api-key=${API_KEY}&format=json&filters[Arrival_Date]=${dateStr}&limit=${limit}&offset=${offset}`;
 
                 try {
-                    const response = await axios.get(url);
-                    const records = response.data.records;
+                    const res = await axios.get(url);
+                    const records = res.data.records;
 
                     if (!records || records.length === 0) {
-                        hasMoreData = false; // Stop loop
-                        if (offset === 0) console.log(`⚠️ No records found for ${state}.`);
+                        hasMore = false;
                         break;
                     }
 
-                    console.log(`   ⬇️  Fetched batch of ${records.length} records (Offset: ${offset})...`);
-                    
-                    // Process and Save this batch
                     const ops = records.map(record => {
                         const realDate = parseIndianDate(record.Arrival_Date);
                         return {
@@ -100,34 +78,38 @@ async function fetchData() {
                     });
 
                     await Price.bulkWrite(ops);
-                    
-                    totalStateRecords += records.length;
-                    
-                    // If we got fewer records than the limit, we've reached the end
-                    if (records.length < limit) {
-                        hasMoreData = false;
-                    } else {
-                        // Prepare for next page
-                        offset += limit;
-                    }
+                    // Minimal logging to keep console clean
+                    process.stdout.write(`+`); 
 
-                } catch (apiError) {
-                    console.error(`❌ API Error for ${state}:`, apiError.message);
-                    hasMoreData = false; // Stop this state on error
+                    if (records.length < limit) hasMore = false;
+                    else offset += limit;
+
+                } catch (err) {
+                    console.error(`\n❌ API Error: ${err.message}`);
+                    hasMore = false;
                 }
             }
-            
-            if (totalStateRecords > 0) {
-                console.log(`✅ Completed ${state}: Saved ${totalStateRecords} total records.`);
-            }
+            console.log(" -> Done.");
         }
 
+        // 2. CLEANUP: Delete data older than 30 days
+        console.log("\n🧹 Running 30-Day Cleanup...");
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        const delRes = await Price.deleteMany({ arrival_date: { $lt: thirtyDaysAgo } });
+        console.log(`✅ Cleanup Done. Deleted ${delRes.deletedCount} old records.`);
+
     } catch (error) {
-        console.error("❌ Database/Script Error:", error.message);
-    } finally {
-        console.log("\n👋 Closing Database Connection.");
-        mongoose.disconnect();
+        console.error("❌ Critical Error:", error);
     }
 }
 
-fetchData();
+if (require.main === module) {
+    (async () => {
+        await runDailyFetch();
+        mongoose.disconnect();
+    })();
+}
+
+module.exports = { runDailyFetch };
