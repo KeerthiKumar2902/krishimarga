@@ -3,9 +3,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 
-// Import Routes
-const priceRoutes = require('./routes/prices');
-const commodityRoutes = require('./routes/commodities'); // <--- NEW LINE 1
+// Import Routes (PLURAL NAMES)
+const priceRoutes = require('./routes/prices'); 
+const commodityRoutes = require('./routes/commodities');
 
 const app = express();
 
@@ -16,9 +16,9 @@ mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("✅ MongoDB Connected Successfully!"))
     .catch((err) => console.error("❌ MongoDB Connection Error:", err));
 
-// Routes
+// Register Routes
 app.use('/api/prices', priceRoutes);
-app.use('/api/commodities', commodityRoutes); // <--- NEW LINE 2
+app.use('/api/commodities', commodityRoutes);
 
 app.get('/', (req, res) => {
     res.send('KrishiMarga API is running...');

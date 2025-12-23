@@ -1,38 +1,70 @@
 const express = require('express');
 const router = express.Router();
-const Price = require('../models/Price');
+const Price = require('../models/Price'); // Correctly import the Price model
 
 // @route   GET /api/prices
-// @desc    Get all prices or filter by state/district/commodity
-// @access  Public
+// @desc    Get prices with filters (State, District, Commodity, Date Range)
 router.get('/', async (req, res) => {
     try {
-        // 1. Read the "Query Parameters" from the URL
-        // Example: /api/prices?district=Shimoga&commodity=Arecanut
-        const { state, district, market, commodity } = req.query;
+        const { state, district, market, commodity, variety, from, to, limit } = req.query;
 
-        // 2. Build the Database Query Object
         let query = {};
 
-        // If the user sent a filter, add it to the query
-        // We use regex for "fuzzy" matching (case-insensitive)
+        // 1. Text Filters (Case Insensitive)
         if (state) query.state = { $regex: state, $options: 'i' };
         if (district) query.district = { $regex: district, $options: 'i' };
         if (market) query.market = { $regex: market, $options: 'i' };
         if (commodity) query.commodity = { $regex: commodity, $options: 'i' };
+        // Variety filter is crucial for the new Details page logic
+        if (variety) query.variety = { $regex: variety, $options: 'i' };
 
-        // 3. Go to MongoDB and fetch the data
-        // .sort({ arrival_date: -1 }) means "Show newest dates first"
-        const prices = await Price.find(query).sort({ arrival_date: -1 });
+        // 2. Date Range Filter
+        if (from || to) {
+            query.arrival_date = {};
+            if (from) query.arrival_date.$gte = new Date(from);
+            if (to) query.arrival_date.$lte = new Date(to);
+        }
 
-        // 4. Send the result back to the user
+        // 3. Sorting & Limiting
+        const limitNum = limit ? parseInt(limit) : 100;
+
+        const prices = await Price.find(query)
+            .sort({ arrival_date: -1 }) // Newest first
+            .limit(limitNum);
+
         res.json({
             count: prices.length,
             data: prices
         });
 
     } catch (err) {
-        console.error(err);
+        console.error("❌ Price Route Error:", err.message);
+        res.status(500).json({ message: 'Server Error' });
+    }
+});
+
+// @route   GET /api/prices/options/districts
+// @desc    Get unique districts
+router.get('/options/districts', async (req, res) => {
+    try {
+        const districts = await Price.distinct('district');
+        res.json(districts.sort());
+    } catch (err) {
+        res.status(500).json({ message: 'Server Error' });
+    }
+});
+
+// @route   GET /api/prices/options/commodities
+// @desc    Get unique commodities (filtered by district)
+router.get('/options/commodities', async (req, res) => {
+    try {
+        const { district } = req.query;
+        let query = {};
+        if (district) query.district = { $regex: district, $options: 'i' };
+        
+        const commodities = await Price.distinct('commodity', query);
+        res.json(commodities.sort());
+    } catch (err) {
         res.status(500).json({ message: 'Server Error' });
     }
 });
