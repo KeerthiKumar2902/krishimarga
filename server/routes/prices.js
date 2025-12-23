@@ -1,5 +1,4 @@
 //server/routes/prices.js
-
 const express = require('express');
 const router = express.Router();
 const Price = require('../models/Price'); // Correctly import the Price model
@@ -66,6 +65,25 @@ router.get('/options/commodities', async (req, res) => {
         
         const commodities = await Price.distinct('commodity', query);
         res.json(commodities.sort());
+    } catch (err) {
+        res.status(500).json({ message: 'Server Error' });
+    }
+});
+
+module.exports = router;
+
+// @route   GET /api/prices/options/varieties
+// @desc    Get varieties for a specific commodity + district
+router.get('/options/varieties', async (req, res) => {
+    try {
+        const { district, commodity } = req.query;
+        let query = {};
+        
+        if (district) query.district = { $regex: district, $options: 'i' };
+        if (commodity) query.commodity = { $regex: commodity, $options: 'i' };
+        
+        const varieties = await Price.distinct('variety', query);
+        res.json(varieties.sort());
     } catch (err) {
         res.status(500).json({ message: 'Server Error' });
     }

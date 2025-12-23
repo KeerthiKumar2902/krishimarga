@@ -1,174 +1,122 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, TrendingUp, TrendingDown, MapPin } from 'lucide-react';
-import { marketService } from '../../../services/api'; // Ensure this path is correct
-import PriceCard from '../components/PriceCard';
-import PriceModal from '../components/PriceModal';
+import { ArrowLeft } from 'lucide-react';
+import { marketService } from '../../../services/api';
+
+import ControlPanel from '../components/ControlPanel';
+import MarketStats from '../components/MarketStats';
+import MarketGraph from '../components/MarketGraph';
 
 const CommodityDetails = () => {
   const { commodityName } = useParams();
   
-  // State for Data
-  const [prices, setPrices] = useState([]);
-  const [summary, setSummary] = useState({ max: null, min: null });
-  
-  // State for Filters
-  const [districts, setDistricts] = useState([]);
-  const [selectedDistrict, setSelectedDistrict] = useState('');
-  
+  const [filters, setFilters] = useState({
+    state: '',
+    district: '',
+    market: '',
+    variety: '',
+    date: '' // New Filter
+  });
+
+  const [todayPrice, setTodayPrice] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [selectedItem, setSelectedItem] = useState(null);
 
-  // 1. Initial Load: Get Summary Stats & District Options for this Crop
+  // Fetch Latest Price when filters change
   useEffect(() => {
-    const initPage = async () => {
-      setLoading(true);
-      try {
-        // Fetch ALL recent data for this crop to calculate stats
-        const result = await marketService.getPrices({ 
-            commodity: commodityName,
-            limit: 100 
-        });
-        
-        const data = result.data;
-        if (data.length > 0) {
-            // Calculate Stats
-            const maxPrice = data.reduce((prev, curr) => (prev.modal_price > curr.modal_price) ? prev : curr);
-            const minPrice = data.reduce((prev, curr) => (prev.modal_price < curr.modal_price) ? prev : curr);
-            setSummary({ max: maxPrice, min: minPrice });
-
-            // Extract unique districts that actually have this crop
-            const uniqueDistricts = [...new Set(data.map(item => item.district))].sort();
-            setDistricts(uniqueDistricts);
-        }
-      } catch (err) {
-        console.error("Error loading stats", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    initPage();
-  }, [commodityName]);
-
-  // 2. Fetch Specific Prices ONLY when District is Selected
-  useEffect(() => {
-    if (!selectedDistrict) {
-        setPrices([]); // Clear list if no district
+    if (!filters.district) {
+        setTodayPrice(null);
         return;
     }
 
-    const fetchLocalPrices = async () => {
-      setLoading(true);
-      try {
-        const result = await marketService.getPrices({ 
-            commodity: commodityName,
-            district: selectedDistrict
-        });
-        setPrices(result.data);
-      } catch (err) {
-        console.error("Error loading prices", err);
-      } finally {
-        setLoading(false);
-      }
+    const fetchLatest = async () => {
+        setLoading(true);
+        try {
+            // Logic:
+            // 1. If Date is selected, filter by that EXACT date.
+            // 2. If NO date, filter by "Latest" (limit: 1, sort desc).
+            
+            let queryParams = {
+                ...filters,
+                commodity: commodityName,
+                limit: 1
+            };
+
+            // If user picked a specific date, fetch THAT day (range start/end same day)
+            if (filters.date) {
+                queryParams.from = filters.date;
+                queryParams.to = filters.date;
+                // Remove limit to ensure we find it if it exists
+                delete queryParams.limit; 
+            }
+
+            const res = await marketService.getPrices(queryParams);
+            
+            if (res.data && res.data.length > 0) {
+                // If date filter was used, we might get multiple (diff markets), pick first
+                setTodayPrice(res.data[0]);
+            } else {
+                setTodayPrice(null);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
     };
-    fetchLocalPrices();
-  }, [selectedDistrict, commodityName]);
+
+    fetchLatest();
+  }, [filters, commodityName]);
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <Link to="/" className="p-2 bg-white rounded-full shadow-sm hover:bg-gray-50 text-gray-600 transition-colors">
-            <ArrowLeft size={20} />
-        </Link>
-        <div>
-            <h1 className="text-2xl font-bold text-brand-900">{commodityName}</h1>
-            <p className="text-gray-500 text-sm">Market Insights</p>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      {summary.max && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-100 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-50 pb-20">
+        
+        {/* Header */}
+        <div className="bg-white pt-6 pb-4 px-4 border-b border-gray-100">
+            <div className="container mx-auto flex items-center gap-4">
+                <Link to="/" className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 text-gray-600 transition-colors">
+                    <ArrowLeft size={20} />
+                </Link>
                 <div>
-                    <p className="text-xs text-green-600 font-semibold uppercase">Highest Price Today</p>
-                    <p className="text-xl font-bold text-gray-800 mt-1">₹{summary.max.modal_price}</p>
-                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                        <MapPin size={12}/> {summary.max.market}, {summary.max.district}
+                    <h1 className="text-2xl font-bold text-gray-800">{commodityName}</h1>
+                    <p className="text-gray-500 text-sm">Market Intelligence Dashboard</p>
+                </div>
+            </div>
+        </div>
+
+        {/* Control Panel (Now passes commodity prop) */}
+        <ControlPanel commodity={commodityName} onFilterChange={setFilters} />
+
+        {/* Main Content */}
+        <div className="container mx-auto px-4 py-8 max-w-5xl">
+            
+            {!filters.district && (
+                <div className="text-center py-20 bg-white rounded-xl border-2 border-dashed border-gray-200">
+                    <div className="text-6xl mb-4">📍</div>
+                    <h3 className="text-xl font-semibold text-gray-700">Select a Location</h3>
+                    <p className="text-gray-500 mt-2">
+                        Use the filters above to select State and District.
                     </p>
                 </div>
-                <div className="bg-green-100 p-2 rounded-full text-green-600">
-                    <TrendingUp size={24} />
-                </div>
-            </div>
+            )}
 
-            <div className="bg-gradient-to-br from-orange-50 to-red-50 p-4 rounded-xl border border-orange-100 flex items-center justify-between">
-                <div>
-                    <p className="text-xs text-orange-600 font-semibold uppercase">Lowest Price Today</p>
-                    <p className="text-xl font-bold text-gray-800 mt-1">₹{summary.min.modal_price}</p>
-                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                        <MapPin size={12}/> {summary.min.market}, {summary.min.district}
-                    </p>
+            {filters.district && (
+                <div className="animate-fade-in">
+                    
+                    {/* Stats Card */}
+                    {loading ? (
+                        <div className="h-40 bg-gray-200 rounded-xl animate-pulse mb-6"></div>
+                    ) : (
+                        <MarketStats priceData={todayPrice} filters={filters} />
+                    )}
+
+                    {/* Graph (History) */}
+                    {/* We pass 'todayPrice' so graph knows what variety to default to if needed */}
+                    <MarketGraph filters={filters} commodity={commodityName} />
+
                 </div>
-                <div className="bg-orange-100 p-2 rounded-full text-orange-600">
-                    <TrendingDown size={24} />
-                </div>
-            </div>
+            )}
+
         </div>
-      )}
-
-      {/* Filter Section - This is the KEY CONTROL */}
-      <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 mb-8 sticky top-4 z-10">
-        <h3 className="text-md font-semibold text-gray-700 mb-3">Check Local Rates</h3>
-        <div className="relative">
-            <select 
-                value={selectedDistrict}
-                onChange={(e) => setSelectedDistrict(e.target.value)}
-                className="w-full p-3 pl-4 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:ring-2 focus:ring-brand-500 outline-none appearance-none cursor-pointer"
-            >
-                <option value="">-- Select Your District --</option>
-                {districts.map(dist => (
-                    <option key={dist} value={dist}>{dist}</option>
-                ))}
-            </select>
-            <div className="absolute right-4 top-3.5 pointer-events-none text-gray-400">▼</div>
-        </div>
-      </div>
-
-      {/* Results List - Only shows when District is Selected */}
-      <div>
-        {!selectedDistrict ? (
-            <div className="text-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                <p>Select a district above to see market prices.</p>
-            </div>
-        ) : loading ? (
-            <div className="text-center py-12 text-gray-500">Fetching live rates...</div>
-        ) : prices.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {prices.map((price) => (
-                    <PriceCard 
-                        key={price._id} 
-                        data={price} 
-                        onClick={setSelectedItem} 
-                    />
-                ))}
-            </div>
-        ) : (
-            <div className="text-center py-12 text-gray-500">
-                No prices found for {commodityName} in {selectedDistrict} today.
-            </div>
-        )}
-      </div>
-
-      {/* Modal for Graph */}
-      {selectedItem && (
-        <PriceModal 
-          item={selectedItem} 
-          onClose={() => setSelectedItem(null)} 
-        />
-      )}
     </div>
   );
 };

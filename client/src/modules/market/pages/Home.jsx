@@ -1,3 +1,4 @@
+// client/src/modules/market/pages/Home.jsx
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
